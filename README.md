@@ -70,7 +70,7 @@ python [/path/to/Build_Transcriptome.py] -i [/path/to/gffcompare/output/prefix] 
 
 The `Build_Transcriptome.py` command is expected to use about 4.5GB of memory and take about 20 minutes.
 
-**Step 4:** Use `Annotate_ORF.py` to annotate open-reading frames for each transcript in the GTF file produced by `Build_Transcriptome.py`. This script can also be found in the `scripts` folder.
+**Step 4 (OPTIONAL):** Use `Annotate_ORF.py` to annotate open-reading frames for each transcript in the GTF file produced by `Build_Transcriptome.py`. This script can also be found in the `scripts` folder.
 
 ```
 python [/path/to/Annotate_ORF.py] -i [/path/to/output.transcripts.gtf] \
@@ -101,3 +101,15 @@ python [/path/to/Quantify_Transcripts.py] -i [/path/to/input/BAM/file] \
 ```
 
 The `Quantify_Transcripts.py` command is expected to use about 3.5GB of memory and take about 16 hours.
+
+**Step 6 (OPTIONAL):** Use `Filter_Detected_Transcripts.py` to filter the set of transcripts in `/path/to/output.transcripts.updated.gtf.gz` for those detected in at least one of your input samples. This script is found in the `scripts` folder. 
+
+The file `/path/to/output.transcripts.updated.gtf.gz` contains annotations for both known and novel transcripts that may either be present (or absent) in your set of input samples. Some downstream applications may require a GTF file containing transcripts that were detected in at least one sample (e.g., transcripts supported by at least X reads in at least one sample). To enable this type of filtering, we wrote `Filter_Detected_Transcripts.py`:
+
+```
+python [/path/to/Filter_Detected_Transcripts.py] -i [/path/to/input/GTF/file] \
+  -s [/path/to/list/of/transcript/counts/files] \
+  -x [minimum read count threshold for deciding if a transcript is detected (default: 1)] \
+  -o [/path/to/output/GTF/file]
+```
+
