@@ -55,7 +55,9 @@ echo "/path/to/stringtie/output/GTF" >> "/path/to/input/GTF/list"
 
 The `gffcompare` command is expected to use about 2.5GB of memory and take about 5 minutes.
 
-**Step 3:** Use `Build_Transcriptome.py` to identify high-confidence, full-length transcripts from the merged GTF file produced by GffCompare. This script can be found in the `scripts` folder and requires the following two files, which can be found in the `assets` folder:
+**Step 3:** Use `Build_Transcriptome.py` to identify high-confidence, full-length transcripts from the merged GTF file produced by GffCompare. This script can be found in the `scripts` folder. 
+
+Optionally, users can use the following two files to further refine ends of discovered transcripts. (These files can be found in the `assets` folder):
 * `human.refTSS_v4.1.hg38.bed.gz`: A tabix-indexed and bgzip-compressed BED file containing genomic coordinates of transcription start sites in the human reference genome (GRCh38/hg38) based on annotations from the [RefTSS database](https://reftss.riken.jp/) (v4.1)
 * `atlas.clusters.2.0.GRCh38.bed.gz`: A tabix-indexed and bgzip-compressed BED file containing genomic coordinates of polyadenylation sites in the human reference genome (GRCh38/hg38) based on annotations from the [PolyASite database](https://polyasite.unibas.ch/) (v2.0)
 
@@ -63,8 +65,6 @@ The `gffcompare` command is expected to use about 2.5GB of memory and take about
 python [/path/to/Build_Transcriptome.py] -i [/path/to/gffcompare/output/prefix] \
     -g [/path/to/gencode/GTF] \
     -f [/path/to/reference/genome/FASTA] \
-    -x [/path/to/human.refTSS_v4.1.hg38.bed.gz] \
-    -y [/path/to/atlas.clusters.2.0.GRCh38.bed.gz] \
     -o [/path/to/output.transcripts.gtf]
 ```
 
