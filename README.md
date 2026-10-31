@@ -57,16 +57,27 @@ The `gffcompare` command is expected to use about 2.5GB of memory and take about
 
 **Step 3:** Use `Build_Transcriptome.py` to identify high-confidence, full-length transcripts from the merged GTF file produced by GffCompare. This script can be found in the `scripts` folder. 
 
-Optionally, users can use the following two files to further refine ends of discovered transcripts. (These files can be found in the `assets` folder):
+Optionally, users can provide either or both of the following files (available in the `assets` folder) to support transcript end refinement:
 * `human.refTSS_v4.1.hg38.bed.gz`: A tabix-indexed and bgzip-compressed BED file containing genomic coordinates of transcription start sites in the human reference genome (GRCh38/hg38) based on annotations from the [RefTSS database](https://reftss.riken.jp/) (v4.1)
 * `atlas.clusters.2.0.GRCh38.bed.gz`: A tabix-indexed and bgzip-compressed BED file containing genomic coordinates of polyadenylation sites in the human reference genome (GRCh38/hg38) based on annotations from the [PolyASite database](https://polyasite.unibas.ch/) (v2.0)
 
+When these files are not provided, transcript end refinement relies on GENCODE basic transcript annotations where available. Otherwise, the original transcript end coordinates are retained without requiring external peak evidence.
+
 ```
+# Basic usage:
 python [/path/to/Build_Transcriptome.py] -i [/path/to/gffcompare/output/prefix] \
     -g [/path/to/gencode/GTF] \
     -f [/path/to/reference/genome/FASTA] \
     -o [/path/to/output.transcripts.gtf]
+
+# Optional arguments:
+    -x [/path/to/human.refTSS_v4.1.hg38.bed.gz] \
+    -y [/path/to/atlas.clusters.2.0.GRCh38.bed.gz] \
+    --disable-junction-filter \
+    --disable-transcript-recovery
 ```
+
+By default, splice junction filtering and novel transcript recovery are enabled. The `-x` and `-y` arguments are independent and can be supplied individually or together.
 
 The `Build_Transcriptome.py` command is expected to use about 4.5GB of memory and take about 20 minutes.
 
