@@ -453,6 +453,8 @@ def main():
         help = 'path to output GTF file')
     
     # Optional flags
+    parser.add_argument('--disable-reference-merging', action = 'store_true',
+        help = 'disable merging of discovered transcripts with reference transcripts')
     parser.add_argument('--disable-junction-filter', action = 'store_true',
         help = 'disable filtering of splice junctions')
     parser.add_argument('--disable-transcript-recovery', action = 'store_true',
@@ -465,6 +467,7 @@ def main():
     # Determine which optional procedures to perform
     refine_tss = args.x is not None
     refine_polya = args.y is not None
+    merge_reference = not args.disable-reference-merging
     filter_junctions = not args.disable_junction_filter
     recover_transcripts = not args.disable_transcript_recovery
 
@@ -480,6 +483,7 @@ def main():
 
     # Read in inprefix.tracking file and determine which consensus transcripts are derived from GENCODE
     trackDF = pd.read_csv(inprefix + '.tracking', sep = '\t', header = None)
+    missingTx = set(trackDF[(trackDF.iloc[:,5:] == '-').apply(all, axis = 1)][0])
     trackDF = trackDF[trackDF[4] != '-'][[0, 1, 4]]
     trackDF[4] = trackDF[4].apply(lambda x: '|'.join(x.split(':')[1].split('|')[:2]))
     trackDict = dict(zip(trackDF[0], trackDF[4]))
@@ -497,6 +501,10 @@ def main():
     inDF['gencode_id'] = inDF['transcript_id'].map(trackDict).fillna('.')
     inDF['gencode_canonical'] = inDF['gencode_id'].map(canonicalTx).fillna(False)
     inDF['gencode_basic'] = inDF['gencode_id'].map(basicTx).fillna(False)
+
+    if not merge_reference:
+        # Remove transcripts from inDF that weren't actually discovered
+        inDF = inDF[~inDF['transcript_id'].isin(missingTx)].reset_index(drop = True)
 
     # Read in genome as a pysam FastaFile object
     genomeFasta = pysam.FastaFile(genome)
