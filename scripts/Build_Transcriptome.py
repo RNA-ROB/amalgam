@@ -2,8 +2,8 @@
 
 '''
 Author: Robert Wang (Xing Lab)
-Date: 2026.01.05
-Version: 1.3.0
+Date: 2026.10.31
+Version: 1.4.0
 
 This is a script designed to construct a high-confidence transcriptome from a merged collection of putative
 transcripts (from running GffCompare together with GENCODE annotations). This script requires the following 
@@ -12,8 +12,11 @@ input files:
     2. A GTF file containing GENCODE annotations (the same one used when running GffCompare)
         * When running GffCompare, this file must be the first file provided as input!
     3. A FASTA file containing the reference genome sequence
-    4. A BED file with refTSS v4.1 peaks (fifth column describes the number of samples with TPM > 1)
-    5. A BED file with polyASite v2.0 peaks (fifth column describes the number of samples with TPM > 1)
+
+Optionally, users can provide the following files to further filter transcripts for those with high-confidence
+transcript ends:
+    1. A BED file with refTSS v4.1 peaks (fifth column describes the number of samples with TPM > 1)
+    2. A BED file with polyASite v2.0 peaks (fifth column describes the number of samples with TPM > 1)
 
 This script will generate a GTF file containing the coordinates of transcripts in our high-confidence transcriptome.
 
@@ -150,20 +153,25 @@ def AdjustTerminalEnds(group, reftssbed, polyabed, chrom, strand):
             trust_start += [True] * fegroup.shape[0]
         else:
             # Check if any of the TSS's overlap a peak
-            if strand == '+':
-                fegroup['near_peak'] = fegroup['first_exon'].apply(lambda x: FindPeak(reftssbed, chrom, x[0], 100, 5, strand))
-            else:
-                fegroup['near_peak'] = fegroup['first_exon'].apply(lambda x: FindPeak(polyabed, chrom, x[0], 100, 5, strand))
-            
-            if any(fegroup['near_peak']):
-                # Default to the most upstream TSS classified as "near peak"
-                pivot = min(fegroup[fegroup['near_peak']]['first_exon'].apply(lambda x: x[0]).values)
-                updated_tss += [pivot if pivot < fe[1] else fe[0] for fe in fegroup['first_exon'].values]
+            # If no peak file is provided, assume that the start sites are reliable
+            if (reftssbed if strand == '+' else polyabed) is None:
+                updated_tss += [fe[0] for fe in fegroup['first_exon'].values]
                 trust_start += [True] * fegroup.shape[0]
             else:
-                # Assume that the TSS's are not trustworthy
-                updated_tss += [-1] * fegroup.shape[0]
-                trust_start += [False] * fegroup.shape[0]
+                if strand == '+':
+                    fegroup['near_peak'] = fegroup['first_exon'].apply(lambda x: FindPeak(reftssbed, chrom, x[0], 100, 5, strand))
+                else:
+                    fegroup['near_peak'] = fegroup['first_exon'].apply(lambda x: FindPeak(polyabed, chrom, x[0], 100, 5, strand))
+                
+                if any(fegroup['near_peak']):
+                    # Default to the most upstream TSS classified as "near peak"
+                    pivot = min(fegroup[fegroup['near_peak']]['first_exon'].apply(lambda x: x[0]).values)
+                    updated_tss += [pivot if pivot < fe[1] else fe[0] for fe in fegroup['first_exon'].values]
+                    trust_start += [True] * fegroup.shape[0]
+                else:
+                    # Assume that the TSS's are not trustworthy
+                    updated_tss += [-1] * fegroup.shape[0]
+                    trust_start += [False] * fegroup.shape[0]
 
     updated_group['updated_tss'], updated_group['trust_start'] = updated_tss, trust_start
 
@@ -200,21 +208,27 @@ def AdjustTerminalEnds(group, reftssbed, polyabed, chrom, strand):
             updated_tes += [pivot if le[0] < pivot else le[1] for le in legroup['last_exon'].values]
             trust_end += [True] * legroup.shape[0]
         else:
-            # Check if any of the TSS's overlap a peak
-            if strand == '+':
-                legroup['near_peak'] = legroup['last_exon'].apply(lambda x: FindPeak(polyabed, chrom, x[-1], 100, 5, strand))
-            else:
-                legroup['near_peak'] = legroup['last_exon'].apply(lambda x: FindPeak(reftssbed, chrom, x[-1], 100, 5, strand))
-            
-            if any(legroup['near_peak']):
-                # Default to the most upstream TSS classified as "near peak"
-                pivot = max(legroup[legroup['near_peak']]['last_exon'].apply(lambda x: x[-1]).values)
-                updated_tes += [pivot if le[0] < pivot else le[1] for le in legroup['last_exon'].values]
+            # Check if any of the TES's overlap a peak
+            # If no peak file is provided, assume that the end sites are reliable
+            if (polyabed if strand == '+' else reftssbed) is None:
+                updated_tes += [le[1] for le in legroup['last_exon'].values]
                 trust_end += [True] * legroup.shape[0]
             else:
-                # Assume that the TES's are not trustworthy
-                updated_tes += [-1] * legroup.shape[0]
-                trust_end += [False] * legroup.shape[0]
+                # Check if any of the TES's overlap a peak
+                if strand == '+':
+                    legroup['near_peak'] = legroup['last_exon'].apply(lambda x: FindPeak(polyabed, chrom, x[-1], 100, 5, strand))
+                else:
+                    legroup['near_peak'] = legroup['last_exon'].apply(lambda x: FindPeak(reftssbed, chrom, x[-1], 100, 5, strand))
+                
+                if any(legroup['near_peak']):
+                    # Default to the most upstream TES classified as "near peak"
+                    pivot = max(legroup[legroup['near_peak']]['last_exon'].apply(lambda x: x[-1]).values)
+                    updated_tes += [pivot if le[0] < pivot else le[1] for le in legroup['last_exon'].values]
+                    trust_end += [True] * legroup.shape[0]
+                else:
+                    # Assume that the TES's are not trustworthy
+                    updated_tes += [-1] * legroup.shape[0]
+                    trust_end += [False] * legroup.shape[0]
 
     updated_group['updated_tes'], updated_group['trust_end'] = updated_tes, trust_end
 
@@ -244,7 +258,7 @@ def RemoveSubsetTranscripts(updated_group):
     
     return updated_group[~updated_group['transcript_id'].isin(blacklist)]
 
-def FilterTranscripts(group, genomeFasta, reftssbed, polyabed):
+def FilterTranscripts(group, genomeFasta, reftssbed, polyabed, filter_junctions = True, recover_transcripts = True):
     '''
     This is a function that filters group for high-confidence transcripts
     '''
@@ -329,7 +343,10 @@ def FilterTranscripts(group, genomeFasta, reftssbed, polyabed):
                     if len(anno_splice_sites[intron[0]] & anno_splice_sites[intron[1]]) == 0:
                         curr_bad_introns.append(intron)
             
-            bad_introns.append(curr_bad_introns)
+            if filter_junctions:
+                bad_introns.append(curr_bad_introns)
+            else:
+                bad_introns.append([])
 
             # Determine optimal gene assignment for transcript
             gene_assignment.append(next(iter([k for k, v in dict(Counter(candidate_genes)).items() if v == num_anno_sites]), '.'))
@@ -409,10 +426,11 @@ def FilterTranscripts(group, genomeFasta, reftssbed, polyabed):
             novel_ctr += 1
             outlines += FormatGTF(chrom, item[4], strand, item[-1], group_id.replace('XLOC_', 'NovelTx-') + '-' + str(novel_ctr).zfill(6))
     
-    for k, v in rescue_paths.items():
-        # Each rescue transcript is a novel transcript
-        novel_ctr += 1
-        outlines += FormatGTF(chrom, list(k), strand, v, group_id.replace('XLOC_', 'NovelTx-') + '-' + str(novel_ctr).zfill(6))
+    if recover_transcripts:
+        for k, v in rescue_paths.items():
+            # Each rescue transcript is a novel transcript
+            novel_ctr += 1
+            outlines += FormatGTF(chrom, list(k), strand, v, group_id.replace('XLOC_', 'NovelTx-') + '-' + str(novel_ctr).zfill(6))
 
     return outlines
 
@@ -427,16 +445,28 @@ def main():
         help = 'path to GTF file with reference transcript annotations from GENCODE')
     parser.add_argument('-f', metavar = '/path/to/reference/genome/FASTA', required = True,
         help = 'path to FASTA file with reference genome sequence')
-    parser.add_argument('-x', metavar = '/path/to/refTSS/BED/file', required = True,
-        help = 'path to BED file with refTSS peaks')
-    parser.add_argument('-y', metavar = '/path/to/polyASite/BED/file', required = True,
-        help = 'path to BED file with polyASite peaks')
+    parser.add_argument('-x', metavar = '/path/to/refTSS/BED/file',
+        help = '(OPTIONAL) path to BED file with refTSS peaks')
+    parser.add_argument('-y', metavar = '/path/to/polyASite/BED/file', 
+        help = '(OPTIONAL) path to BED file with polyASite peaks')
     parser.add_argument('-o', metavar = '/path/to/output/GTF/file', required = True,
         help = 'path to output GTF file')
+    
+    # Optional flags
+    parser.add_argument('--disable-junction-filter', action = 'store_true',
+        help = 'disable filtering of splice junctions')
+    parser.add_argument('--disable-transcript-recovery', action = 'store_true',
+        help = 'disable recovery of novel transcript isoforms')
     
     # Parse command-line arguments
     args = parser.parse_args()
     inprefix, gencode, genome, reftss, polyasite, outfile = args.i, args.g, args.f, args.x, args.y, args.o
+
+    # Determine which optional procedures to perform
+    refine_tss = args.x is not None
+    refine_polya = args.y is not None
+    filter_junctions = not args.disable_junction_filter
+    recover_transcripts = not args.disable_transcript_recovery
 
     # Read in gencode and determine which transcripts are basic
     gencodeDF = pd.read_csv(gencode, sep = '\t', header = None, comment = '#')
@@ -471,8 +501,8 @@ def main():
     # Read in genome as a pysam FastaFile object
     genomeFasta = pysam.FastaFile(genome)
 
-    # Read in BED file of refTSS peaks and polyASite peaks
-    reftssbed, polyabed = tabix.open(reftss), tabix.open(polyasite)
+    # Read in BED file of refTSS peaks and polyASite peaks (if provided)
+    reftssbed, polyabed = tabix.open(reftss) if refine_tss else None, tabix.open(polyasite) if refine_polya else None
 
     # Iterate over rows of inDF
     groupDF, ctr, output = inDF.groupby('gene_id'), 0, []
@@ -482,7 +512,8 @@ def main():
         # Confirm that there exists at least one basic transcript in the group
         if any(group['gencode_basic'].values):
             # Filter group for high-confidence transcripts
-            output += FilterTranscripts(group, genomeFasta, reftssbed, polyabed)
+            output += FilterTranscripts(group, genomeFasta, reftssbed, polyabed, 
+                filter_junctions = filter_junctions, recover_transcripts = recover_transcripts)
         
         if ctr % 10 == 0:
             outlog('Done processing ' + str(ctr) + ' transcript bundles...')
@@ -492,4 +523,3 @@ def main():
     
 if __name__ == '__main__':
     main()
-
