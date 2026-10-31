@@ -73,11 +73,12 @@ python [/path/to/Build_Transcriptome.py] -i [/path/to/gffcompare/output/prefix] 
 # Optional arguments:
     -x [/path/to/human.refTSS_v4.1.hg38.bed.gz] \
     -y [/path/to/atlas.clusters.2.0.GRCh38.bed.gz] \
+    --disable-reference-merging \
     --disable-junction-filter \
-    --disable-transcript-recovery
+    --disable-transcript-recovery 
 ```
 
-By default, splice junction filtering and novel transcript recovery are enabled. The `-x` and `-y` arguments are independent and can be supplied individually or together.
+By default, merging with reference annotations, splice junction filtering, and novel transcript recovery are enabled. The `-x` and `-y` arguments are independent and can be supplied individually or together.
 
 The `Build_Transcriptome.py` command is expected to use about 4.5GB of memory and take about 20 minutes.
 
