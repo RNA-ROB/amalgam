@@ -453,11 +453,11 @@ def main():
         help = 'path to output GTF file')
     
     # Optional flags
-    parser.add_argument('--disable-reference-merging', action = 'store_true',
+    parser.add_argument('--disable_reference_merging', action = 'store_true',
         help = 'disable merging of discovered transcripts with reference transcripts')
-    parser.add_argument('--disable-junction-filter', action = 'store_true',
+    parser.add_argument('--disable_junction_filter', action = 'store_true',
         help = 'disable filtering of splice junctions')
-    parser.add_argument('--disable-transcript-recovery', action = 'store_true',
+    parser.add_argument('--disable_transcript_recovery', action = 'store_true',
         help = 'disable recovery of novel transcript isoforms')
     
     # Parse command-line arguments
@@ -467,7 +467,7 @@ def main():
     # Determine which optional procedures to perform
     refine_tss = args.x is not None
     refine_polya = args.y is not None
-    merge_reference = not args.disable-reference-merging
+    merge_reference = not args.disable_reference_merging
     filter_junctions = not args.disable_junction_filter
     recover_transcripts = not args.disable_transcript_recovery
 
