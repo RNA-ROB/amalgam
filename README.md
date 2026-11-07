@@ -109,6 +109,7 @@ tabix -p gff [/path/to/output.transcripts.updated.gtf.gz]
 ```
 python [/path/to/Quantify_Transcripts.py] -i [/path/to/input/BAM/file] \
     -g [/path/to/output.transcripts.updated.gtf.gz] \
+    -t [number of threads] \
     -o [/path/to/transcript/counts/file]
 ```
 
