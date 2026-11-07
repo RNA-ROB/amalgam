@@ -2,8 +2,8 @@
 
 '''
 Author: Robert Wang (Xing Lab)
-Date: 2026.01.05
-Version: 1.4.0
+Date: 2026.11.03
+Version: 1.5.0
 
 This is a script designed to directly quantify annotated transcripts from alignments of long RNA-seq reads to 
 the reference genome. This script requires the following two input files:
@@ -21,9 +21,11 @@ This script will generate an output file transcript.counts.tsv, which has the fo
 # =====================================================================================================================
 
 # Load required packages
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime
+from multiprocessing import get_context
 import cvxpy as cp
-import argparse, os, re, bisect
+import argparse, re, bisect
 import numpy as np
 import pandas as pd
 import pysam, tabix
@@ -440,7 +442,42 @@ def SplitAnnotations(gtffile):
     regions.append(cluster)
 
     return regions
-        
+
+
+def ProcessRegion(region, samfile, tbfile):
+    '''
+    Process one non-overlapping genomic region and return its transcript read counts.
+    Each region is independent, so these results can be combined across workers.
+    '''
+    # Construct genomic "chains" for all transcripts of each gene within region
+    currChains = BuildChains(tbfile, region)
+
+    # Assess candidate retained introns for downstream quantification
+    currChains = AssessRetainedIntrons(samfile, region, currChains)
+
+    # Blacklist transcripts with novel internal exons that have poor read support
+    blacklist = CheckNovelInternalExons(samfile, region, currChains)
+
+    # Determine read compatibility with transcripts in currChains
+    readAssign = CheckReads(samfile, region, currChains, blacklist)
+
+    # Estimate transcript counts for this region
+    return QuantifyTranscripts(currChains, readAssign)
+
+def InitWorker(infile, gtffile):
+    '''
+    Open independent BAM/GTF handles once per worker process.
+    '''
+    global worker_samfile, worker_tbfile
+    worker_samfile = pysam.AlignmentFile(infile, 'rb')
+    worker_tbfile = tabix.open(gtffile)
+
+def ProcessRegionWorker(region):
+    '''
+    Execute a region task using the current worker's file handles.
+    '''
+    return ProcessRegion(region, worker_samfile, worker_tbfile)
+
 def main():
     message = 'Quantifies annotated transcripts from long RNA-seq read alignments to the genome'
     parser = argparse.ArgumentParser(description = message)
@@ -450,6 +487,8 @@ def main():
         help = 'path to BAM file with long RNA-seq read alignments to genome')
     parser.add_argument('-g', metavar = '/path/to/reference/GTF/file', required = True,
         help = 'path to GTF file with reference transcript annotations')
+    parser.add_argument('-t', metavar = 'INT', type = int, default = 1,
+        help = 'number of parallel worker processes to use (default: 1)')
     parser.add_argument('-o', metavar = '/path/to/output/file', required = True,
         help = 'path to output file')
     
@@ -461,32 +500,35 @@ def main():
     outlog('Splitting reference transcript annotations into non-overlapping regions...')
     regions = SplitAnnotations(gtffile)
 
-    # Iterate over regions and quantify transcripts in each region
-    tbfile = tabix.open(gtffile)
-    samfile = pysam.AlignmentFile(infile, 'rb')
-
+    # Quantify independent regions, either serially or across multiple processes
     outlog('Starting transcript quantification...')
-    output, errorlog = [], []
-    for idx, region in enumerate(regions):
-        # Construct genomic "chains" for all transcripts of each gene within region
-        currChains = BuildChains(tbfile, region)
+    output = []
 
-        # For each gene in currChains, pull out the set of candidate retained introns and determine
-        # which ones look reliable for downstream quantification
-        currChains = AssessRetainedIntrons(samfile, region, currChains)
-
-        # Blacklist transcripts with novel internal exons that have very poor read support
-        # We will assign their corresponding transcripts a read count of 0 (because they should not exist)
-        blacklist = CheckNovelInternalExons(samfile, region, currChains)
-
-        # For reads mapping to region, determine their compatibility with transcripts in currChains
-        readAssign = CheckReads(samfile, region, currChains, blacklist)
-                
-        # Estimate read counts for each transcript in currChains
-        output += QuantifyTranscripts(currChains, readAssign)
-
-        if idx % 10 == 0 and idx > 0:
-            outlog('Done processing ' + str(idx) + ' regions...')
+    if args.t == 1:
+        # Preserve the existing single-process path without multiprocessing overhead
+        tbfile = tabix.open(gtffile)
+        samfile = pysam.AlignmentFile(infile, 'rb')
+        try:
+            for idx, region in enumerate(regions, start = 1):
+                output.extend(ProcessRegion(region, samfile, tbfile))
+                if idx % 10 == 0:
+                    outlog('Done processing ' + str(idx) + ' regions...')
+        finally:
+            samfile.close()
+            if hasattr(tbfile, 'close'):
+                tbfile.close()
+    else:
+        # Process-based parallelism bypasses Python's GIL for CPU-bound work.
+        # Each worker opens its own BAM/GTF handles; no handles are shared.
+        nworkers = min(args.t, len(regions))
+        with ProcessPoolExecutor(max_workers = nworkers, mp_context = get_context('spawn'),
+            initializer = InitWorker, initargs = (infile, gtffile)) as executor:
+            futures = {executor.submit(ProcessRegionWorker, region) for region in regions}
+            for idx, future in enumerate(as_completed(futures), start = 1):
+                output.extend(future.result())
+                futures.discard(future)
+                if idx % 10 == 0:
+                    outlog('Done processing ' + str(idx) + ' regions...')
     
     # Save output to outfile
     outDF = pd.DataFrame(output, columns = ['gene_id', 'transcript_id', 'count'])
@@ -495,4 +537,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
